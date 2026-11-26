@@ -56,6 +56,11 @@ pub const SYMFONY_FILES_KEY: &str = "symfony";
 /// framework ([`NameFacts`](crate::summary::NameFacts)).
 pub const NAMES_FILES_KEY: &str = "names";
 
+/// The key of [`META_FILES`] listing the files that declare class aliases
+/// ([`DeclaredKind::ClassAlias`](crate::summary::DeclaredKind::ClassAlias)),
+/// a few of the [`NAMES_FILES_KEY`] files: a class lookup reads them alone.
+pub const CLASS_ALIAS_FILES_KEY: &str = "class_aliases";
+
 const MULTIMAPS: [MultiDef; 5] = [FQNS, SHORT_NAMES, SUBCLASSES, NAMESPACES, META_FILES];
 
 /// The id a file's entries in [`WORDS`] use: the first 8 bytes of the blake3
@@ -166,6 +171,10 @@ fn entries(file: &str, summary: &FileSummary) -> Vec<Entry> {
     if !summary.names.is_empty() {
         let decl = Decl { kind: DeclKind::Namespace, fqn: String::new(), file: file.to_owned(), index: 0 };
         out.push(Entry { table: 4, key: NAMES_FILES_KEY.to_owned(), decl });
+    }
+    if summary.names.declared.iter().any(|name| name.kind == crate::summary::DeclaredKind::ClassAlias) {
+        let decl = Decl { kind: DeclKind::Namespace, fqn: String::new(), file: file.to_owned(), index: 0 };
+        out.push(Entry { table: 4, key: CLASS_ALIAS_FILES_KEY.to_owned(), decl });
     }
     // Every namespace that holds a declaration is a child of its parent,
     // up to the global namespace.

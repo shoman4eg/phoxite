@@ -67,6 +67,12 @@ impl Extractor<'_> {
     pub(super) fn declared_name(&mut self, node: &FunctionCall<'_>) {
         let Expression::Identifier(function) = node.function else { return };
         let Some(called) = function.value().rsplit(|byte| *byte == b'\\').next() else { return };
+        // `Foo\class_alias()` is some other function.
+        let builtin = function.value().strip_prefix(b"\\").unwrap_or(function.value()) == called;
+        if builtin && called.eq_ignore_ascii_case(b"class_alias") {
+            self.class_alias(node);
+            return;
+        }
         // Every one starts with one of these letters: most calls end here.
         if !matches!(called.first().map(u8::to_ascii_lowercase), Some(b'a' | b'd' | b'r' | b'u' | b'v' | b'w')) {
             return;
@@ -957,5 +963,63 @@ impl Extractor<'_> {
             }
         }
         out
+    }
+}
+
+/// Class aliases: `class_alias()`.
+impl Extractor<'_> {
+    /// `class_alias('Real', 'Alias')`, with names written as strings or as
+    /// `Foo::class`. A name put together at run time declares nothing.
+    fn class_alias(&mut self, node: &FunctionCall<'_>) {
+        let arguments = node.argument_list.arguments.as_slice();
+        let (Some(Argument::Positional(class)), Some(Argument::Positional(alias))) =
+            (arguments.first(), arguments.get(1))
+        else {
+            return;
+        };
+        if let (Some(class), Some(alias)) = (self.alias_class_name(class.value), self.alias_class_name(alias.value)) {
+            self.declare_alias(alias, class);
+        }
+    }
+
+    /// A class name as an argument of `class_alias()`: a string (its leading
+    /// `\` dropped) or `Foo::class`, with the span of the name.
+    fn alias_class_name(&self, expr: &Expression<'_>) -> Option<(String, Span)> {
+        use mago_syntax::cst::{Access, ClassLikeConstantSelector};
+        let (name, span) = match expr {
+            Expression::Parenthesized(inner) => return self.alias_class_name(inner.expression),
+            Expression::Literal(Literal::String(string)) => {
+                (String::from_utf8_lossy(string.value?).into_owned(), inside(expr))
+            }
+            Expression::Access(Access::ClassConstant(access))
+                if matches!(&access.constant, ClassLikeConstantSelector::Identifier(constant)
+                    if constant.value.eq_ignore_ascii_case(b"class")) =>
+            {
+                let Expression::Identifier(class) = access.class else { return None };
+                (self.class_name(class), class.span())
+            }
+            _ => return None,
+        };
+        let name = name.trim_start_matches('\\');
+        let valid = !name.is_empty()
+            && !name.ends_with('\\')
+            && !name.contains("\\\\")
+            && name.chars().all(|c| c == '\\' || c == '_' || c.is_alphanumeric() || !c.is_ascii());
+        valid.then(|| (name.to_owned(), span))
+    }
+
+    fn declare_alias(&mut self, (alias, span): (String, Span), (class, _): (String, Span)) {
+        if alias.eq_ignore_ascii_case(&class) {
+            return;
+        }
+        let loc = self.loc(span);
+        self.summary.names.declared.push(DeclaredName {
+            kind: DeclaredKind::ClassAlias,
+            name: alias,
+            dynamic: false,
+            loc,
+            params: Vec::new(),
+            classes: vec![class],
+        });
     }
 }

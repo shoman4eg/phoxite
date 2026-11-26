@@ -318,6 +318,8 @@ struct Shared {
     /// The names the files declare for a framework, and the edit count
     /// they were read at.
     names: Mutex<Option<(u64, Arc<crate::frameworks::names::NamesProject>)>>,
+    /// The cache of [`PhpEngine::class_aliases`], by edit count.
+    class_aliases: Mutex<Option<(u64, Arc<crate::frameworks::names::ClassAliases>)>>,
     laravel: Mutex<LaravelCache>,
     /// The Laravel configuration keys for a modification count.
     laravel_config: Mutex<Option<(u64, Arc<ConfigKeys>)>>,
@@ -571,6 +573,7 @@ impl PhpEngine {
             wordpress_blocks: Mutex::new(None),
             symfony_class: Mutex::new(None),
             names: Mutex::new(None),
+            class_aliases: Mutex::new(None),
             laravel: Mutex::new(LaravelCache::default()),
             laravel_config: Mutex::new(None),
             laravel_env: Mutex::new(None),
@@ -1876,6 +1879,7 @@ impl PhpEngine {
                     crate::navigate::find_declaration(summary, kind, fqn).map(|_| ())
                 })
                 .is_some()
+            || (kind == NameKind::ClassLike && self.class_alias(fqn).is_some())
     }
 
     /// Whether the bundled stubs declare `fqn` and the project doesn't.
@@ -1923,6 +1927,10 @@ impl PhpEngine {
         blocks
     }
 
+    pub(crate) fn shared_class_aliases(&self) -> &Mutex<Option<(u64, Arc<crate::frameworks::names::ClassAliases>)>> {
+        &self.shared.class_aliases
+    }
+
     pub(crate) fn shared_names(&self) -> &Mutex<Option<(u64, Arc<crate::frameworks::names::NamesProject>)>> {
         &self.shared.names
     }
@@ -1936,10 +1944,15 @@ impl PhpEngine {
 
 impl Declarations for PhpEngine {
     /// A Laravel global alias (`DB::table()` in a file without a namespace)
-    /// is the class it stands for.
+    /// and a class alias (`class_alias()`) are the class they stand for.
     fn class_like(&self, fqn: &str) -> Option<ClassLike> {
         self.project_declaration(NameKind::ClassLike, fqn, |summary| summary.class_like(fqn).cloned())
             .or_else(|| self.stubs().class_like(fqn).map(|(_, class)| class.clone()))
+            .or_else(|| {
+                // The end of the aliases is no alias: no loop.
+                let class = self.class_alias(fqn)?;
+                self.class_like(&class)
+            })
             .or_else(|| {
                 // Namespaced targets only, so aliases can't chain or loop.
                 let class = self.laravel_class_alias(fqn).filter(|class| class.contains('\\'))?;

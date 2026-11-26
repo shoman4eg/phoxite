@@ -6,6 +6,7 @@
 //! keeps it until something is edited. Nothing asks for it but the
 //! reference kinds of a detected framework.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -97,7 +98,91 @@ impl NamesProject {
     }
 }
 
+/// The class aliases of the project ([`DeclaredKind::ClassAlias`]): each
+/// alias, in lower case without the leading `\`, to the class it stands for.
+#[derive(Clone, Debug, Default)]
+pub struct ClassAliases {
+    /// The class, and whether a library declares the alias.
+    aliases: HashMap<String, (String, bool)>,
+}
+
+impl ClassAliases {
+    /// The project's own alias wins over a library's; between two of the
+    /// same kind, the first in path order.
+    pub fn new<'a>(facts: impl IntoIterator<Item = (&'a NameFacts, bool)>) -> Self {
+        let mut aliases: HashMap<String, (String, bool)> = HashMap::new();
+        for (facts, library) in facts {
+            for alias in facts.declared.iter().filter(|name| name.kind == DeclaredKind::ClassAlias) {
+                let Some(class) = alias.classes.first() else { continue };
+                let key = alias_key(&alias.name);
+                match aliases.get(&key) {
+                    Some((_, known_library)) if !*known_library || library => {}
+                    _ => {
+                        aliases.insert(key, (class.clone(), library));
+                    }
+                }
+            }
+        }
+        Self { aliases }
+    }
+
+    /// The class `name` is an alias of, following an alias of an alias to
+    /// the end; `None` when `name` is no alias or the aliases make a loop.
+    pub fn resolve(&self, name: &str) -> Option<String> {
+        let mut class = &self.aliases.get(&alias_key(name))?.0;
+        for _ in 0..ALIAS_HOPS {
+            match self.aliases.get(&alias_key(class)) {
+                Some((next, _)) => class = next,
+                None => return Some(class.clone()),
+            }
+        }
+        None
+    }
+}
+
+/// How a class alias is looked up in [`ClassAliases`].
+fn alias_key(name: &str) -> String {
+    name.trim_start_matches('\\').to_ascii_lowercase()
+}
+
+/// How many aliases of aliases [`ClassAliases::resolve`] follows.
+const ALIAS_HOPS: usize = 8;
+
 impl PhpEngine {
+    /// The class `name` is an alias of (`class_alias()`); see
+    /// [`ClassAliases::resolve`].
+    pub(crate) fn class_alias(&self, name: &str) -> Option<String> {
+        self.class_aliases().resolve(name)
+    }
+
+    /// The project's class aliases, kept until something is edited. Read
+    /// from the few files the index lists as declaring some (and the open
+    /// buffers), not from every file with [`NameFacts`]: every class lookup
+    /// that finds no class asks.
+    pub(crate) fn class_aliases(&self) -> Arc<ClassAliases> {
+        let count = self.edit_count();
+        if let Some((at, aliases)) = self.shared_class_aliases().lock().clone()
+            && at == count
+        {
+            return aliases;
+        }
+        let indexed = self.index().and_then(|index| index.class_alias_files().ok()).unwrap_or_default();
+        let mut summaries: Vec<(PathBuf, Arc<FileSummary>)> =
+            indexed.iter().filter_map(|path| Some((path.clone(), self.shared_summary(path).ok()??))).collect();
+        for (path, summary) in self.open_summaries() {
+            let has = summary.names.declared.iter().any(|name| name.kind == DeclaredKind::ClassAlias);
+            if has && !indexed.contains(&path) {
+                summaries.push((path, summary));
+            }
+        }
+        summaries.sort_by(|a, b| a.0.cmp(&b.0));
+        let aliases = Arc::new(ClassAliases::new(
+            summaries.iter().map(|(path, summary)| (&summary.names, self.is_library(path))),
+        ));
+        *self.shared_class_aliases().lock() = Some((count, aliases.clone()));
+        aliases
+    }
+
     /// The names the project's files declare; see the module documentation.
     pub fn names(&self) -> Arc<NamesProject> {
         let count = self.edit_count();

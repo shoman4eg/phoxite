@@ -11,6 +11,7 @@ use crate::syntax::{LineIndex, ParsedFile};
 
 mod cakephp;
 mod callables;
+mod class_aliases;
 mod codeigniter;
 mod drupal;
 mod hierarchy;

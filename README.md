@@ -12,7 +12,8 @@ servers. What it does:
   it), document highlights, inlay hints, semantic highlighting, call and type hierarchies,
   quick-fixes and intentions, Optimize Imports, Format Document (PSR-12 via Mago), and
   inspections with per-inspection settings. PHP up to 8.6, partial function application
-  included; syntax newer than the project's version is reported. Moving PHP files updates their namespaces and
+  included; syntax newer than the project's version is reported. An alias `class_alias()` makes
+  is the class it stands for. Moving PHP files updates their namespaces and
   every reference. Change Signature, Extract Method with its options, the Generate member
   choosers and Pull Members Up / Push Members Down ask the user first: the VS Code
   extension has their dialogs, and `docs/editors.md` says what another client needs.

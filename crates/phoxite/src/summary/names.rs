@@ -141,6 +141,11 @@ pub enum DeclaredKind {
     /// A Drupal theme hook: a key of the array `hook_theme()` returns. Its
     /// classes are the variables its template is given.
     DrupalThemeHook,
+    /// A class alias: `class_alias('Real', 'Alias')`. The name is the
+    /// alias's full name without the leading `\`; its one class is the
+    /// class it stands for. Not framework specific: every project reads
+    /// them ([`crate::engine::PhpEngine`]'s class lookup).
+    ClassAlias,
 }
 
 /// A name a call declares.

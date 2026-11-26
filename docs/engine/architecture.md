@@ -202,6 +202,21 @@ the last three are guesses only what the editor shows uses
   `final` class). Go to Declaration offers every class declaring it, and
   the call has the union of what they return (at most four types).
 
+### Class aliases
+
+`class_alias('Real', 'Alias')` is a name fact (`DeclaredKind::ClassAlias`,
+the alias as the name and the class as its one class). The index lists the
+files that have some under their own key (`CLASS_ALIAS_FILES_KEY`): every
+class lookup that finds nothing asks, and must not read every file with name
+facts. `PhpEngine::class_aliases` maps each alias to its class (the project's
+own alias over a library's) until something is edited, and
+`PhpEngine::class_alias` follows an alias of an alias (at most eight, `None`
+on a loop). A namespaced `Foo\class_alias()` is another function. A declared
+class wins: `class_like`, `declares` and `declarations_of` ask for the alias
+only when the project and the stubs have no class of that name, and then
+answer with the class it stands for. Only names written as strings or
+`Foo::class` count.
+
 ## Threads and cancellation
 
 - Indexing runs on the engine's worker thread and rayon. It can be cancelled

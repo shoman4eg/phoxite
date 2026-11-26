@@ -435,6 +435,14 @@ impl PhpEngine {
         if out.is_empty() {
             out.extend(self.stub_declaration(kind, fqn));
         }
+        // A class alias (`class_alias()`): where the class it stands for is
+        // declared. The end of the aliases is no alias, so this ends.
+        if out.is_empty()
+            && kind == NameKind::ClassLike
+            && let Some(class) = self.class_alias(fqn)
+        {
+            return self.declarations_of(kind, &class, here, summary);
+        }
         out
     }
 

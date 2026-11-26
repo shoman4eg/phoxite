@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Class aliases.** A class `class_alias('Real\Name', 'Alias\Name')` makes (its names
+  written as strings or as `Foo::class`) is that class: Go to Definition goes to the
+  class it stands for, its members resolve and it is no longer reported as undefined.
+  An alias of an alias is followed; a name put together at run time is not.
+
 ## 0.12.0 — 2026-11-23
 
 - **Joomla.** In a Joomla site (`libraries/src/Version.php`) or an extension opened on
